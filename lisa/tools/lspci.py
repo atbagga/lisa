@@ -213,7 +213,27 @@ class Lspci(Tool):
                 sudo=True,
             )
             for pci_raw in result.stdout.splitlines():
-                pci_device = PciDevice(pci_raw)
+                pci_device_id_info = {}
+                matched_pci_device_info = PATTERN_PCI_DEVICE_ID.match(pci_raw)
+                if matched_pci_device_info:
+                    pci_device_id_info[matched_pci_device_info.group("slot")] = {
+                        "device_id": matched_pci_device_info.group("device_id"),
+                        "vendor_id": matched_pci_device_info.group("vendor_id"),
+                        "controller_id": matched_pci_device_info.group("controller_id"),
+                    }
+                else:
+                    raise LisaException("cannot find any matched pci ids")
+                self._pci_ids.update(pci_device_id_info)
+
+            result = self.run(
+                "-m",
+                force_run=force_run,
+                shell=True,
+                expected_exit_code=0,
+                sudo=True,
+            )
+            for pci_raw in result.stdout.splitlines():
+                pci_device = PciDevice(pci_raw, self._pci_ids)
                 self._pci_devices.append(pci_device)
 
             # Fetching the id information using 'lspci -nnm' is not reliable
@@ -241,8 +261,6 @@ class Lspci(Tool):
                         "vendor_id": matched_pci_device_info.group("vendor_id"),
                         "controller_id": matched_pci_device_info.group("controller_id"),
                     }
-                else:
-                    raise LisaException("cannot find any matched pci ids")
                 self._pci_ids.update(pci_device_id_info)
 
         return self._pci_devices
