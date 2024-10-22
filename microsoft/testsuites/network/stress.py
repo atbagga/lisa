@@ -275,8 +275,6 @@ class Stress(TestSuite):
             for node in environment.nodes.list():
                 start_stop = node.features[StartStop]
                 start_stop.restart()
-            # Add delay to wait for the network interface ready.
-            sleep(120)
             initialize_nic_info(environment)
             sriov_basic_test(environment)
 
@@ -307,8 +305,6 @@ class Stress(TestSuite):
                 start_stop = node.features[StartStop]
                 start_stop.stop()
                 start_stop.start()
-            # Add delay to wait for the network interface ready.
-            sleep(120)
             initialize_nic_info(environment)
             sriov_basic_test(environment)
 
