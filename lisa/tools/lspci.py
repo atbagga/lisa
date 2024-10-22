@@ -136,9 +136,9 @@ class PciDevice:
             self.device_info = matched_pci_device_info.group("device")
             assert self.device_info, f"Can not find device info for: {raw_str}"
             # Initialize the device_id, vendor_id and controller_id to None
-            self.vendor_id = None
-            self.device_id = None
-            self.controller_id = None
+            self.vendor_id = ""
+            self.device_id = ""
+            self.controller_id = ""
         else:
             raise LisaException("cannot find any matched pci devices")
 
@@ -193,7 +193,7 @@ class Lspci(Tool):
 
         return device_type_list
 
-    @retry(KeyError, tries=10, delay=20)
+    @retry(KeyError, tries=10, delay=10)
     def get_devices(self, force_run: bool = False) -> List[PciDevice]:
         if (not self._pci_devices) or force_run:
             self._pci_devices = []
@@ -242,8 +242,14 @@ class Lspci(Tool):
 
             for i in range(len(self._pci_devices)):
                 pci_slot_id = self._pci_devices[i].slot
+                # Sometimes the list of devices is not same from above 'lspci -n' output
+                # and 'lspci -m' output.
+                # It usually happens when the VM is just finished boooting and not
+                # completed detected all PCI devices.
+                # For example it takes a while to detect SRIOV devices.
+                # In such cases we need to retry after a short delay.
                 if pci_slot_id not in self._pci_ids:
-                    raise LisaException(f"cannot find device id from {pci_slot_id}")
+                    raise KeyError(f"cannot find device id from {pci_slot_id}")
                 self._pci_devices[i].device_id = self._pci_ids[pci_slot_id]["device_id"]
                 self._pci_devices[i].vendor_id = self._pci_ids[pci_slot_id]["vendor_id"]
                 self._pci_devices[i].controller_id = self._pci_ids[pci_slot_id][
