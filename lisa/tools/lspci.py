@@ -110,8 +110,8 @@ PATTERN_MODULE_IN_USE = re.compile(r"Kernel driver in use: ([A-Za-z0-9_-]*)", re
 
 
 class PciDevice:
-    def __init__(self, pci_device_raw: str, pci_ids: Dict[str, Any]) -> None:
-        self.parse(pci_device_raw, pci_ids)
+    def __init__(self, pci_device_raw: str) -> None:
+        self.parse(pci_device_raw)
 
     def __str__(self) -> str:
         return (
@@ -135,13 +135,10 @@ class PciDevice:
             assert self.vendor, f"Can not find vendor info for: {raw_str}"
             self.device_info = matched_pci_device_info.group("device")
             assert self.device_info, f"Can not find device info for: {raw_str}"
-            if pci_ids:
-                self.device_id = pci_ids[self.slot]["device_id"]
-                assert self.device_id, f"cannot find device id from {raw_str}"
-                self.vendor_id = pci_ids[self.slot]["vendor_id"]
-                assert self.vendor_id, f"cannot find vendor id from {raw_str}"
-                self.controller_id = pci_ids[self.slot]["controller_id"]
-                assert self.controller_id, f"cannot findcontroller_id from {raw_str}"
+            # Initialize the device_id, vendor_id and controller_id to None
+            self.vendor_id = None
+            self.device_id = None
+            self.controller_id = None
         else:
             raise LisaException("cannot find any matched pci devices")
 
@@ -205,37 +202,6 @@ class Lspci(Tool):
             # Ensure pci device ids and name mappings are updated.
             self.node.execute("update-pciids", sudo=True, shell=True)
 
-            result = self.run(
-                "-m",
-                force_run=force_run,
-                shell=True,
-                expected_exit_code=0,
-                sudo=True,
-            )
-            for pci_raw in result.stdout.splitlines():
-                pci_device_id_info = {}
-                matched_pci_device_info = PATTERN_PCI_DEVICE_ID.match(pci_raw)
-                if matched_pci_device_info:
-                    pci_device_id_info[matched_pci_device_info.group("slot")] = {
-                        "device_id": matched_pci_device_info.group("device_id"),
-                        "vendor_id": matched_pci_device_info.group("vendor_id"),
-                        "controller_id": matched_pci_device_info.group("controller_id"),
-                    }
-                else:
-                    raise LisaException("cannot find any matched pci ids")
-                self._pci_ids.update(pci_device_id_info)
-
-            result = self.run(
-                "-m",
-                force_run=force_run,
-                shell=True,
-                expected_exit_code=0,
-                sudo=True,
-            )
-            for pci_raw in result.stdout.splitlines():
-                pci_device = PciDevice(pci_raw, self._pci_ids)
-                self._pci_devices.append(pci_device)
-
             # Fetching the id information using 'lspci -nnm' is not reliable
             # due to inconsistencies in device id patterns.
             # Example output of 'lspci -nnm':
@@ -262,6 +228,28 @@ class Lspci(Tool):
                         "controller_id": matched_pci_device_info.group("controller_id"),
                     }
                 self._pci_ids.update(pci_device_id_info)
+
+            # Fetching the device information using 'lspci -m':
+            result = self.run(
+                "-m",
+                force_run=force_run,
+                shell=True,
+                expected_exit_code=0,
+                sudo=True,
+            )
+            for pci_raw in result.stdout.splitlines():
+                pci_device = PciDevice(pci_raw)
+                self._pci_devices.append(pci_device)
+
+            for i in range(len(self._pci_devices)):
+                pci_slot_id = self._pci_devices[i].slot
+                if pci_slot_id not in self._pci_ids:
+                    raise LisaException(f"cannot find device id from {pci_slot_id}")
+                self._pci_devices[i].device_id = self._pci_ids[pci_slot_id]["device_id"]
+                self._pci_devices[i].vendor_id = self._pci_ids[pci_slot_id]["vendor_id"]
+                self._pci_devices[i].controller_id = self._pci_ids[pci_slot_id][
+                    "controller_id"
+                ]
 
         return self._pci_devices
 
