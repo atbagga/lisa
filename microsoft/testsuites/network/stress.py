@@ -1,6 +1,5 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT license.
-from time import sleep
 from typing import Any, cast
 
 from assertpy import assert_that
