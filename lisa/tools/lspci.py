@@ -170,7 +170,6 @@ class Lspci(Tool):
     ) -> List[str]:
         if device_type.upper() not in DEVICE_TYPE_DICT.keys():
             raise LisaException(f"pci_type '{device_type}' is not recognized.")
-        # class_names = DEVICE_TYPE_DICT[device_type.upper()]
         devices_list = self.get_devices(force_run)
         devices_slots = []
 
