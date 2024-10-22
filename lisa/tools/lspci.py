@@ -62,6 +62,7 @@ DEVICE_ID_DICT: Dict[str, List[str]] = {
         "1004",  # Mellanox Technologies MT27500/MT27520 Family [ConnectX-3/ConnectX-3 Pro Virtual Function] # noqa: E501
         "1016",  # Mellanox Technologies MT27710 Family [ConnectX-4 Lx Virtual Function]
         "101a",  # Mellanox Technologies MT28800 Family [ConnectX-5 Ex Virtual Function]
+        "101e",  # Mellanox Technologies [ConnectX Family mlx5Gen Virtual Function]
     ],
     constants.DEVICE_TYPE_NVME: [
         "b111"  # Microsoft Corporation Device, Local NVMe discs
@@ -84,17 +85,20 @@ VENDOR_ID_DICT: Dict[str, List[str]] = {
     ],
     constants.DEVICE_TYPE_NVME: ["1414"],  # Microsoft Corporation
     constants.DEVICE_TYPE_GPU: ["10de"],  # NVIDIA Corporation
+    constants.DEVICE_TYPE_AMD_GPU: ["1002"],  # Advanced Micro Devices, Inc. [AMD/ATI]
 }
 
 CONTROLLER_ID_DICT: Dict[str, List[str]] = {
     constants.DEVICE_TYPE_SRIOV: [
         "0200",  # Ethernet controller
+        "0207",  # Infiniband controller
     ],
     constants.DEVICE_TYPE_NVME: [
         "0108",  # Non-Volatile memory controller
     ],
     constants.DEVICE_TYPE_GPU: [
-        "0302",  # VGA compatible controller"
+        "0302",  # VGA compatible controller
+        "1200",  # Processing accelerators (AMD GPU)
     ],
 }
 
@@ -120,7 +124,7 @@ class PciDevice:
             f"controller_id: {self.controller_id} "
         )
 
-    def parse(self, raw_str: str, pci_ids: Dict[str, Any]) -> None:
+    def parse(self, raw_str: str) -> None:
         matched_pci_device_info = PATTERN_PCI_DEVICE.match(raw_str)
         if matched_pci_device_info:
             self.slot = matched_pci_device_info.group("slot")
@@ -165,29 +169,21 @@ class Lspci(Tool):
         return self._check_exists()
 
     def get_device_names_by_type(
-        self, device_type: str, force_run: bool = False, use_pci_ids: bool = False
+        self, device_type: str, force_run: bool = False
     ) -> List[str]:
         if device_type.upper() not in DEVICE_TYPE_DICT.keys():
             raise LisaException(f"pci_type '{device_type}' is not recognized.")
-        class_names = DEVICE_TYPE_DICT[device_type.upper()]
+        # class_names = DEVICE_TYPE_DICT[device_type.upper()]
         devices_list = self.get_devices(force_run)
         devices_slots = []
-        if use_pci_ids:
-            for device in devices_list:
-                if (
-                    device.controller_id in CONTROLLER_ID_DICT[device_type.upper()]
-                    and device.vendor_id in VENDOR_ID_DICT[device_type.upper()]
-                    and device.device_id in DEVICE_ID_DICT[device_type.upper()]
-                ):
-                    devices_slots.append(device.slot)
-        else:
-            devices_slots = [
-                x.slot for x in devices_list if x.device_class in class_names
-            ]
+
+        for device in devices_list:
+            if device.controller_id in CONTROLLER_ID_DICT[device_type.upper()]:
+                devices_slots.append(device.slot)
         return devices_slots
 
     def get_devices_by_type(
-        self, device_type: str, force_run: bool = False, use_pci_ids: bool = False
+        self, device_type: str, force_run: bool = False
     ) -> List[PciDevice]:
         if device_type.upper() not in DEVICE_TYPE_DICT.keys():
             raise LisaException(
@@ -195,19 +191,10 @@ class Lspci(Tool):
             )
         devices_list = self.get_devices(force_run)
         device_type_list = []
-        if use_pci_ids:
-            for device in devices_list:
-                if (
-                    device.controller_id in CONTROLLER_ID_DICT[device_type.upper()]
-                    and device.vendor_id in VENDOR_ID_DICT[device_type.upper()]
-                    and device.device_id in DEVICE_ID_DICT[device_type.upper()]
-                ):
-                    device_type_list.append(device)
-        else:
-            class_names = DEVICE_TYPE_DICT[device_type.upper()]
-            device_type_list = [
-                x for x in devices_list if x.device_class in class_names
-            ]
+        for device in devices_list:
+            if device.controller_id in CONTROLLER_ID_DICT[device_type.upper()]:
+                device_type_list.append(device)
+
         return device_type_list
 
     @retry(KeyError, tries=10, delay=20)
@@ -217,6 +204,17 @@ class Lspci(Tool):
             self._pci_ids = {}
             # Ensure pci device ids and name mappings are updated.
             self.node.execute("update-pciids", sudo=True, shell=True)
+
+            result = self.run(
+                "-m",
+                force_run=force_run,
+                shell=True,
+                expected_exit_code=0,
+                sudo=True,
+            )
+            for pci_raw in result.stdout.splitlines():
+                pci_device = PciDevice(pci_raw)
+                self._pci_devices.append(pci_device)
 
             # Fetching the id information using 'lspci -nnm' is not reliable
             # due to inconsistencies in device id patterns.
@@ -247,25 +245,10 @@ class Lspci(Tool):
                     raise LisaException("cannot find any matched pci ids")
                 self._pci_ids.update(pci_device_id_info)
 
-            result = self.run(
-                "-m",
-                force_run=force_run,
-                shell=True,
-                expected_exit_code=0,
-                sudo=True,
-            )
-            for pci_raw in result.stdout.splitlines():
-                pci_device = PciDevice(pci_raw, self._pci_ids)
-                self._pci_devices.append(pci_device)
-
         return self._pci_devices
 
-    def disable_devices_by_type(
-        self, device_type: str, use_pci_ids: bool = False
-    ) -> int:
-        devices = self.get_devices_by_type(
-            device_type, force_run=True, use_pci_ids=use_pci_ids
-        )
+    def disable_devices_by_type(self, device_type: str) -> int:
+        devices = self.get_devices_by_type(device_type, force_run=True)
         if 0 == len(devices):
             raise LisaException(f"No matched device type {device_type} found.")
         for device in devices:
@@ -333,7 +316,7 @@ class LspciBSD(Lspci):
     _disabled_devices: Set[str] = set()
 
     def get_device_names_by_type(
-        self, device_type: str, force_run: bool = False, use_pci_ids: bool = False
+        self, device_type: str, force_run: bool = False
     ) -> List[str]:
         output = self.node.execute("pciconf -l", sudo=True).stdout
         if device_type.upper() not in self._DEVICE_DRIVER_MAPPING.keys():
@@ -373,9 +356,7 @@ class LspciBSD(Lspci):
             self._enable_device(device)
         self._disabled_devices.clear()
 
-    def disable_devices_by_type(
-        self, device_type: str, use_pci_ids: bool = False
-    ) -> int:
+    def disable_devices_by_type(self, device_type: str) -> int:
         devices = self.get_device_names_by_type(device_type, force_run=True)
         for device in devices:
             self._disable_device(device)
