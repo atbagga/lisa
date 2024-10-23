@@ -71,6 +71,9 @@ class Disk(Feature):
     def get_resource_disk_mount_point(self) -> str:
         raise NotImplementedError
 
+    def get_resource_disks(self) -> List[str]:
+        raise NotImplementedError
+
     def get_luns(self) -> Dict[str, int]:
         raise NotImplementedError
 
