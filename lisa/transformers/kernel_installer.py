@@ -273,7 +273,7 @@ class RepoInstaller(BaseInstaller):
             repo_entry = f"deb {self.repo_url} {version_name} {repo_component}"
 
         self._log.info(f"Adding repository: {repo_entry}")
-        ubuntu.add_repository(repo_entry)
+        # ubuntu.add_repository(repo_entry)
         full_package_name = runbook.source
         if full_package_name == "linux-azure-fips":
             # Remove default fips repository before kernel installation.
