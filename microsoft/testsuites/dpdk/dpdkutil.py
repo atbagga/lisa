@@ -1178,3 +1178,16 @@ def annotate_dpdk_test_result(
         test_result.information["nic_hw"] = nic_hw
     except AssertionError as err:
         test_kit.node.log.debug(f"Could not fetch NIC short name: {str(err)}")
+
+
+def skip_32bit_test_on_unsupported_distros(os: OperatingSystem) -> None:
+    if not (
+        isinstance(os, Ubuntu)
+        and os.information.version >= "22.4.0"
+        and os.information.version < "22.5.0"
+    ):
+        raise SkippedException(
+            UnsupportedDistroException(
+                os, "32bit test is only implemented for Ubuntu 22.04"
+            )
+        )
