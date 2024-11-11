@@ -47,6 +47,10 @@ class Wget(Tool):
     ) -> str:
         is_valid_url(url)
 
+        if not filename:
+            filename = urlparse(url).path.split("/")[-1]
+            self._log.debug(f"filename is not provided, use {filename} from url.")
+
         file_path, download_path = self._ensure_download_path(file_path, filename)
 
         # remove existing file and dir to download again.
